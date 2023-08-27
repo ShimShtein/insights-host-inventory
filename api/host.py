@@ -41,7 +41,7 @@ from app.payload_tracker import PayloadTrackerProcessingContext
 from app.queue.events import build_event
 from app.queue.events import EventType
 from app.queue.events import message_headers
-from app.serialization import deserialize_canonical_facts
+from app.serialization import deserialize_checkin_facts
 from app.serialization import serialize_host
 from app.utils import Tag
 from lib.host_delete import delete_hosts
@@ -50,6 +50,7 @@ from lib.host_repository import find_non_culled_hosts
 from lib.host_repository import get_host_list_by_id_list_from_db
 from lib.host_repository import update_query_for_owner_id
 from lib.middleware import rbac
+from prometheus_client import Gauge
 
 
 FactOperations = Enum("FactOperations", ("merge", "replace"))
@@ -433,14 +434,20 @@ def _build_paginated_host_tags_response(total, page, per_page, tags_list):
 @metrics.api_request_time.time()
 def host_checkin(body, rbac_filter=None):
     current_identity = get_current_identity()
-    canonical_facts = deserialize_canonical_facts(body)
-    existing_host = find_existing_host(current_identity, canonical_facts)
+    facts = deserialize_checkin_facts(body)
+    canonical_facts = facts['canonical_facts']
+    additional_fields = facts.get('additional_fields', {})
 
-    if existing_host:
-        existing_host._update_modified_date()
-        db.session.commit()
-        serialized_host = serialize_host(existing_host, staleness_timestamps())
-        _emit_patch_event(serialized_host, existing_host.id, existing_host.canonical_facts.get("insights_id"))
-        return flask_json_response(serialized_host, 201)
-    else:
-        flask.abort(404, "No hosts match the provided canonical facts.")
+    cpu_count = additional_fields.get('cpu_count')
+    if cpu_count:
+        metrics.host_cpu_count.labels(subscription_manager_id=canonical_facts['subscription_manager_id']).set(int(cpu_count))
+    # existing_host = find_existing_host(current_identity, canonical_facts)
+
+    # if existing_host:
+    #     existing_host._update_modified_date()
+    #     db.session.commit()
+    #     serialized_host = serialize_host(existing_host, staleness_timestamps())
+    #     _emit_patch_event(serialized_host, existing_host.id, existing_host.canonical_facts.get("insights_id"))
+    #     return flask_json_response(serialized_host, 201)
+    # else:
+    #     flask.abort(404, "No hosts match the provided canonical facts.")

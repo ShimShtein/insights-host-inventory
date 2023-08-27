@@ -49,6 +49,10 @@ ADDITIONAL_HOST_MQ_FIELDS = (
     "system_profile",
 )
 
+_ADDITIONAL_HOST_CHECKIN_FIELDS = (
+    "cpu_count",
+)
+
 
 def deserialize_host(raw_data, schema=HostSchema, system_profile_spec=None):
     try:
@@ -75,6 +79,14 @@ def deserialize_canonical_facts(raw_data, all=False):
 
     return _deserialize_canonical_facts(validated_data)
 
+def deserialize_checkin_facts(raw_data, all=False):
+    additional_facts = raw_data.get("additional_facts", {})
+    return {
+        'canonical_facts': deserialize_canonical_facts(raw_data, all),
+        'additional_fields': {
+            field: _recursive_casefold(additional_facts[field]) for field in _ADDITIONAL_HOST_CHECKIN_FIELDS if additional_facts.get(field)
+        }
+    }
 
 def deserialize_host_xjoin(data):
     host = Host(
